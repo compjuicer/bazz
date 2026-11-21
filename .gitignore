@@ -1,0 +1,9 @@
+build/
+build-release/
+.bridge/
+.cache/
+.claude/settings.local.json
+.DS_Store
+# reference material of the original: local only
+ref/
+CLAUDE.local.md
