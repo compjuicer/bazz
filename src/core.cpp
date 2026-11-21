@@ -21,7 +21,7 @@ void run_action(int index) {
 
 #ifdef BAZZ_DEV
 // tools/reaper drives the UI through ExtState bazz/cmd: "open" | "close" | "reset" | "add X Y <fx name>" | "in|out X Y CH STEREO" |
-// "connect A B" | "insert W X Y <fx name>" | "delete M".
+// "connect A B [SRC DST]" | "insert W X Y <fx name>" | "delete M".
 void debug_command() {
   const char* cmd = GetExtState("bazz", "cmd");
   if (!cmd || !*cmd) return;
@@ -48,9 +48,11 @@ void debug_command() {
     UndoBlock u(s.proj, "bazz: delete machine");
     delete_machine(s, a);
   } else if (sscanf(c.c_str(), "connect %d %d", &a, &b) == 2) {
+    int src = 0, dst = 0;
+    sscanf(c.c_str(), "connect %*d %*d %d %d", &src, &dst);
     Scene s = scan(current());
     UndoBlock u(s.proj, "bazz: connect");
-    connect(s, a, b);
+    connect(s, a, b, src, dst);
   }
 }
 #endif
