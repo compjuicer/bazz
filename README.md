@@ -47,23 +47,32 @@ to choose, Enter to add.
 
 ## Install
 
-bazz needs [ReaImGui](https://github.com/cfillion/reaimgui) (install it with ReaPack). No release builds yet: build
-from source.
+bazz needs [ReaImGui](https://github.com/cfillion/reaimgui). Builds for macOS, Windows and Linux are on the
+[Releases](https://github.com/compjuicer/bazz/releases) page.
+
+- **ReaPack:** Extensions > ReaPack > Import repositories, paste
+  `https://github.com/compjuicer/bazz/raw/main/index.xml`, then install bazz from Browse packages.
+- **By hand:** put the file for your system (`reaper_bazz.dylib`, `.dll` or `.so`) in REAPER's `UserPlugins` folder
+  (Options > Show REAPER resource path).
+
+Restart REAPER and run the action **bazz: Show machine view**.
+
+To build it yourself (macOS shown; Windows and Linux work the same with CMake):
 
 ```sh
 brew install cmake ninja
 cmake -S . -B build -G Ninja -DBAZZ_DEV=OFF -DCMAKE_BUILD_TYPE=Release
 cmake --build build
-cp build/reaper_bazz.dylib ~/Library/Application\ Support/REAPER/UserPlugins/
 ```
-
-Restart REAPER and run the action **bazz: Show machine view**.
 
 ## Development
 
 The default build (`BAZZ_DEV=ON`) hot-reloads: `cmake --build build --target install_link` once, restart REAPER, then
 `tools/reaper build-reload` swaps in a new core without restarting. Tests: `./build/graph_tests`. See `CLAUDE.md` for
 the layout and tooling.
+
+Releases: `tools/release <version>` writes the ReaPack `index.xml`, commits and pushes a `v<version>` tag; GitHub
+Actions then builds all three platforms and attaches them to the release.
 
 ## License
 
