@@ -35,6 +35,8 @@
 #define REAPERAPI_WANT_EnumInstalledFX
 #define REAPERAPI_WANT_SetOnlyTrackSelected
 #define REAPERAPI_WANT_GetTrackName
+#define REAPERAPI_WANT_GetProjExtState
+#define REAPERAPI_WANT_SetProjExtState
 #define REAPERAPI_WANT_GetNumAudioInputs
 #define REAPERAPI_WANT_GetNumAudioOutputs
 #include "reaper_api.h"

@@ -20,6 +20,7 @@ void round_box(double x, double y, double w, double h, double r, int fill_col, i
 void tri(const double* x, const double* y, int fill_col, int line_col = kBlack);
 void text_centered(double x, double y, double w, double h, const std::string&, int col = kBlack, bool bold = false);  // clipped
 void text_in(double x, double y, double w, double h, const std::string&, bool right, int col = kBlack);  // regular, clipped
+double text_w(const std::string&, bool bold = false);
 ImGui_Font* ui_font();
 constexpr double kFontSize = 11;  // Tahoma 8pt at 96 dpi
 

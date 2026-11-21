@@ -22,7 +22,8 @@ using namespace bazz;
 namespace {
 
 void* (*g_get_func)(const char*) = nullptr;
-bool g_api = false, g_open = false, g_reset = false;
+bool g_api = false, g_open = false, g_reset = false, g_docked = false;
+int g_dock_req = 0;  // 1 dock, 2 undock
 ImGui_Context* g_ctx = nullptr;
 std::string g_error;
 
@@ -336,6 +337,8 @@ void context_items(Scene& s) {
       io_menu(s, false);
       G::EndMenu(g_ctx);
     }
+    G::Separator(g_ctx);
+    if (menu_item(g_docked ? "Undock window" : "Dock window")) ui_toggle_dock();
   }
 }
 
@@ -350,6 +353,60 @@ void context_menu(Scene& s) {
   G::PopStyleVar(g_ctx, 4);
   G::PopStyleColor(g_ctx, cols);
 }
+// Classic tabs along the top, one per graph, then "+" for a new one. Right-click a tab to delete its graph.
+constexpr double kTabsH = 20;
+
+void tabs(Scene& s) {
+  gfx::begin(g_ctx);
+  double w = 0, h = 0;
+  G::GetContentRegionAvail(g_ctx, &w, &h);
+  gfx::fill(0, 0, w, kTabsH, kMenuBg);
+  gfx::fill(0, kTabsH - 1, w, 1, gfx::kWhite);
+  std::string sel = selected_graph(s.proj);
+  auto list = graphs(s.proj);
+  double x = 2, ox = gfx::ox(), oy = gfx::oy();
+  bool menu = false;
+  for (size_t i = 0; i <= list.size(); ++i) {
+    bool plus = i == list.size(), on = !plus && list[i].id == sel;
+    std::string label = plus ? "+" : list[i].name;
+    double tw = gfx::text_w(label, on) + 14, y = on ? 1 : 3;
+    gfx::fill(x, y, tw, kTabsH - y, on ? kBg : kMenuBg);
+    gfx::fill(x, y, tw - 1, 1, gfx::kWhite);
+    gfx::fill(x, y, 1, kTabsH - y - (on ? 0 : 1), gfx::kWhite);
+    gfx::fill(x + tw - 1, y + 1, 1, kTabsH - y - 2, kMenuShadow);
+    if (on) gfx::fill(x + 1, kTabsH - 1, tw - 2, 1, kBg);
+    gfx::text_centered(x, y, tw, kTabsH - y, label, gfx::kBlack, on);
+    G::SetCursorScreenPos(g_ctx, ox + x, oy);
+    G::PushID(g_ctx, ("tab" + std::to_string(i)).c_str());
+    if (G::InvisibleButton(g_ctx, "t", tw, kTabsH, G::ButtonFlags_MouseButtonLeft | G::ButtonFlags_MouseButtonRight)) {
+      if (plus) {
+        UndoBlock u(s.proj, "bazz: new graph");
+        new_graph(s);
+      } else
+        select_graph(s.proj, list[i].id), s = scan(s.proj);
+    }
+    if (!plus && G::IsItemClicked(g_ctx, G::MouseButton_Right)) {
+      select_graph(s.proj, list[i].id), s = scan(s.proj);
+      menu = true;
+    }
+    G::PopID(g_ctx);
+    x += tw;
+  }
+  if (menu) G::OpenPopup(g_ctx, "tabmenu");
+  int cols = push_menu_style();
+  if (G::BeginPopup(g_ctx, "tabmenu")) {
+    if (menu_item("Delete graph")) {
+      UndoBlock u(s.proj, "bazz: delete graph");
+      delete_graph(s);
+      ensure_root(s);
+    }
+    G::EndPopup(g_ctx);
+  }
+  G::PopStyleVar(g_ctx, 4);
+  G::PopStyleColor(g_ctx, cols);
+  G::SetCursorScreenPos(g_ctx, ox, oy + kTabsH);
+}
+
 void canvas(Scene& s) {
   double w = 0, h = 0;
   G::GetContentRegionAvail(g_ctx, &w, &h);
@@ -457,6 +514,10 @@ void canvas(Scene& s) {
 void ui_init(void* (*get_func)(const char*)) { g_get_func = get_func; }
 void ui_set_open(bool open) { g_open = open; }
 void ui_reset_window() { g_reset = true; }
+void ui_toggle_dock() {
+  g_dock_req = g_docked ? 2 : 1;
+  g_open = true;
+}
 bool ui_is_open() { return g_open; }
 
 void ui_frame(ReaProject* proj) {
@@ -477,6 +538,8 @@ void ui_frame(ReaProject* proj) {
       UndoBlock u(proj, "bazz: create master");
       ensure_root(s);
     }
+    if (g_dock_req) G::SetNextWindowDockID(g_ctx, g_dock_req == 1 ? -1 : 0);
+    g_dock_req = 0;
     G::SetNextWindowSize(g_ctx, 900, 650, g_reset ? G::Cond_Always : G::Cond_FirstUseEver);
     if (g_reset) {
       G::SetNextWindowPos(g_ctx, 60, 118);
@@ -494,6 +557,8 @@ void ui_frame(ReaProject* proj) {
     G::PopStyleColor(g_ctx, 4);
     G::PopStyleVar(g_ctx);
     if (visible) {
+      g_docked = G::IsWindowDocked(g_ctx);
+      tabs(s);
       canvas(s);
       G::End(g_ctx);
     }

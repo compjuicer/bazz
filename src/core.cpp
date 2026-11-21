@@ -13,14 +13,16 @@ ReaProject* current() { return EnumProjects(-1, nullptr, 0); }
 
 const BazzAction kActions[] = {
     {"BAZZ_WINDOW", "bazz: Show machine view"},
+    {"BAZZ_DOCK", "bazz: Dock/undock machine view"},
 };
 
 void run_action(int index) {
   if (index == 0) ui_set_open(!ui_is_open());
+  else if (index == 1) ui_toggle_dock();
 }
 
 #ifdef BAZZ_DEV
-// tools/reaper drives the UI through ExtState bazz/cmd: "open" | "close" | "reset" | "add X Y <fx name>" | "in|out X Y CH STEREO" |
+// tools/reaper drives the UI through ExtState bazz/cmd: "open" | "close" | "reset" | "dock" | "add X Y <fx name>" | "in|out X Y CH STEREO" |
 // "connect A B [SRC DST]" | "insert W X Y <fx name>" | "delete M".
 void debug_command() {
   const char* cmd = GetExtState("bazz", "cmd");
@@ -31,6 +33,7 @@ void debug_command() {
   int a = 0, b = 0, n = 0;
   if (c == "open" || c == "close") ui_set_open(c == "open");
   else if (c == "reset") ui_reset_window();
+  else if (c == "dock") ui_toggle_dock();
   else if (sscanf(c.c_str(), "add %lf %lf %n", &x, &y, &n) == 2 && n) {
     Scene s = scan(current());
     UndoBlock u(s.proj, "bazz: new machine");

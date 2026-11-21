@@ -19,6 +19,8 @@ wire a real send, so undo, save, plugin state and the mixer all keep working.
 | Delete a machine | Alt/Option-click it, or right-click > Delete. Its wires are rejoined around it |
 | Mute | Click the LED in the top-left corner |
 | Open the plugin | Double-click the machine |
+| Another graph in the same project | Click **+** in the tab strip; right-click a tab to delete its graph |
+| Dock into REAPER's docker | Right-click the canvas > Dock window, or the action **bazz: Dock/undock machine view** |
 
 Selecting a generator arms its track for live MIDI from any input, so you can play it right away.
 
@@ -40,7 +42,7 @@ to choose, Enter to add.
 ## How it maps to REAPER
 
 - A folder track named `bazz` is the Master machine. Each machine is a hidden child track, so the mixer only shows
-  the one folder.
+  the one folder. Every graph in a project is its own folder (`bazz`, `bazz 2`, ...).
 - Wires are sends; a wire into Master is a send to the folder track. Extra plugin ports use the send's channel pairs.
 - Hardware output nodes are hardware sends; audio input nodes are armed, monitored tracks that record nothing.
 - Positions and panel state are stored on the tracks, so they are saved with the project.

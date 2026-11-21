@@ -21,7 +21,16 @@ struct Scene {
   std::vector<Ref> refs;            // per wire
 };
 
-Scene scan(ReaProject*);  // empty graph if there is no root yet
+// A project can hold several graphs, each its own tagged folder track (its own Master). The selected one is saved
+// in the project (ProjExtState bazz/graph); scan() reads it.
+struct GraphInfo {
+  std::string id, name;  // root track GUID, folder track name
+};
+std::vector<GraphInfo> graphs(ReaProject*);
+std::string selected_graph(ReaProject*);  // id; the first graph if the saved one is gone
+void select_graph(ReaProject*, const std::string& id);
+
+Scene scan(ReaProject*);  // the selected graph; empty if the project has none yet
 
 struct UndoBlock {
   ReaProject* proj;
@@ -30,7 +39,9 @@ struct UndoBlock {
   ~UndoBlock();
 };
 
-void ensure_root(Scene&);
+void ensure_root(Scene&);  // create a first graph if the project has none
+void new_graph(Scene&);     // add a graph and select it
+void delete_graph(Scene&);  // the selected graph, folder and machines
 int add_machine(Scene&, const std::string& fx, double x, double y);  // new machine's index, -1 if the plugin failed
 void insert_machine(Scene&, int wire, const std::string& fx, double x, double y);  // A->B becomes A->fx->B
 void splice(Scene&, int wire, int m);  // A->B becomes A->m->B

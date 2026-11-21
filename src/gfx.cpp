@@ -58,6 +58,14 @@ void tri(const double* x, const double* y, int fill_col, int line_col) {
 
 ImGui_Font* ui_font() { return g_font; }
 
+double text_w(const std::string& s, bool bold) {
+  G::PushFont(g_ctx, bold ? g_bold : g_font, kFontSize);
+  double w = 0, h = 0;
+  G::CalcTextSize(g_ctx, s.c_str(), &w, &h);
+  G::PopFont(g_ctx);
+  return w;
+}
+
 void text_in(double x, double y, double w, double h, const std::string& s, bool right, int col) {
   G::PushFont(g_ctx, g_font, kFontSize);
   double tw = 0, th = 0;

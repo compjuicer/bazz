@@ -31,10 +31,31 @@ std::string guid(MediaTrack* tr) {
 
 int track_index(MediaTrack* tr) { return int(GetMediaTrackInfo_Value(tr, "IP_TRACKNUMBER")) - 1; }
 
-MediaTrack* find_root(ReaProject* proj) {
+std::vector<MediaTrack*> roots(ReaProject* proj) {
+  std::vector<MediaTrack*> v;
   for (int i = 0; i < CountTracks(proj); ++i)
-    if (get_str(GetTrack(proj, i), kRole) == "root") return GetTrack(proj, i);
-  return nullptr;
+    if (get_str(GetTrack(proj, i), kRole) == "root") v.push_back(GetTrack(proj, i));
+  return v;
+}
+
+MediaTrack* find_root(ReaProject* proj) {
+  auto v = roots(proj);
+  char id[64] = "";
+  GetProjExtState(proj, "bazz", "graph", id, sizeof id);
+  for (MediaTrack* r : v)
+    if (guid(r) == id) return r;
+  return v.empty() ? nullptr : v[0];
+}
+
+MediaTrack* make_root(ReaProject* proj, const std::string& name) {
+  int n = CountTracks(proj);
+  InsertTrackAtIndex(n, true);
+  MediaTrack* root = GetTrack(proj, n);
+  set_str(root, kRole, "root");
+  set_str(root, "P_NAME", name);
+  set_str(root, kPos, pos_str(0, 0));
+  SetProjExtState(proj, "bazz", "graph", guid(root).c_str());
+  return root;
 }
 
 std::vector<MediaTrack*> children(ReaProject* proj, MediaTrack* root) {
@@ -183,14 +204,38 @@ Scene scan(ReaProject* proj) {
   return s;
 }
 
+std::vector<GraphInfo> graphs(ReaProject* proj) {
+  std::vector<GraphInfo> v;
+  for (MediaTrack* r : roots(proj)) {
+    char name[256] = "";
+    GetTrackName(r, name, sizeof name);
+    v.push_back({guid(r), name});
+  }
+  return v;
+}
+
+std::string selected_graph(ReaProject* proj) {
+  MediaTrack* r = find_root(proj);
+  return r ? guid(r) : "";
+}
+
+void select_graph(ReaProject* proj, const std::string& id) { SetProjExtState(proj, "bazz", "graph", id.c_str()); }
+
 void ensure_root(Scene& s) {
   if (!s.tracks.empty()) return;
-  int n = CountTracks(s.proj);
-  InsertTrackAtIndex(n, true);
-  MediaTrack* root = GetTrack(s.proj, n);
-  set_str(root, kRole, "root");
-  set_str(root, "P_NAME", "bazz");
-  set_str(root, kPos, pos_str(0, 0));
+  make_root(s.proj, "bazz");
+  s = scan(s.proj);
+}
+
+void new_graph(Scene& s) {
+  make_root(s.proj, "bazz " + std::to_string(roots(s.proj).size() + 1));
+  s = scan(s.proj);
+}
+
+void delete_graph(Scene& s) {
+  for (int i = s.n_tracks - 1; i >= 0; --i) DeleteTrack(s.tracks[i]);
+  auto rest = roots(s.proj);
+  select_graph(s.proj, rest.empty() ? "" : guid(rest[0]));
   s = scan(s.proj);
 }
 
