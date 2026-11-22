@@ -6,10 +6,10 @@
         <description><![CDATA[Machine view: wire generators and effects into Master on a canvas. Needs ReaImGui.]]></description>
         <link rel="website">https://github.com/compjuicer/bazz</link>
       </metadata>
-      <version name="0.2.0" author="compjuicer" time="2026-11-21T04:38:25Z">
-        <source platform="darwin" file="reaper_bazz.dylib">https://github.com/compjuicer/bazz/releases/download/v0.2.0/reaper_bazz.dylib</source>
-        <source platform="win64" file="reaper_bazz.dll">https://github.com/compjuicer/bazz/releases/download/v0.2.0/reaper_bazz.dll</source>
-        <source platform="linux64" file="reaper_bazz.so">https://github.com/compjuicer/bazz/releases/download/v0.2.0/reaper_bazz.so</source>
+      <version name="0.3.0" author="compjuicer" time="2026-11-22T18:18:58Z">
+        <source platform="darwin" file="reaper_bazz.dylib">https://github.com/compjuicer/bazz/releases/download/v0.3.0/reaper_bazz.dylib</source>
+        <source platform="win64" file="reaper_bazz.dll">https://github.com/compjuicer/bazz/releases/download/v0.3.0/reaper_bazz.dll</source>
+        <source platform="linux64" file="reaper_bazz.so">https://github.com/compjuicer/bazz/releases/download/v0.3.0/reaper_bazz.so</source>
       </version>
     </reapack>
   </category>
