@@ -77,10 +77,11 @@ const char* dump() {
   g_ret = ui_status();
   Scene s = scan(current());
   char buf[512];
-  const char* kinds[] = {"master", "gen", "fx", "in", "out"};
+  const char* kinds[] = {"master", "gen", "fx", "in", "out", "track"};
   for (size_t i = 0; i < s.g.machines.size(); ++i) {
     auto& m = s.g.machines[i];
-    snprintf(buf, sizeof buf, "machine %zu %s \"%s\" pos=%.3f,%.3f mute=%d\n", i, kinds[int(m.kind)], m.name.c_str(), m.x, m.y, m.mute);
+    snprintf(buf, sizeof buf, "machine %zu %s \"%s\" pos=%.3f,%.3f mute=%d solo=%d/%d arm=%d\n", i, kinds[int(m.kind)], m.name.c_str(), m.x, m.y,
+             m.mute, m.solo, m.soloed, m.armed);
     g_ret += buf;
     for (auto& p : m.ins) g_ret += "  in " + std::to_string(p.ch) + " \"" + p.name + "\"\n";
     for (auto& p : m.outs) g_ret += "  out " + std::to_string(p.ch) + " \"" + p.name + "\"\n";

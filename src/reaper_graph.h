@@ -54,7 +54,17 @@ void set_wire_vol(Scene&, int wire, double vol);
 void set_pos(Scene&, int m, double x, double y);
 void set_mute(Scene&, int m, bool);
 void set_panel(Scene&, int m, bool open);  // saved with the project, no undo point
-void arm_only(Scene&, int m);  // record-arm m (a generator) for live MIDI, disarm the other generators
+void set_arm(Scene&, int m, bool);
+void set_solo(Scene&, int m, bool);  // S on m, then REAPER solo for every machine in a soloed chain
+
+// Ordinary project tracks (not part of any graph) that can be brought in as track nodes.
+struct TrackInfo {
+  std::string id, name;
+  int number;  // 1-based, as REAPER shows it
+};
+std::vector<TrackInfo> free_tracks(ReaProject*);
+int add_track_node(Scene&, const std::string& id, double x, double y);  // the node's index
+void insert_track(Scene&, int wire, const std::string& id, double x, double y);  // A->B becomes A->track->B
 void show_fx(Scene&, int m);
 std::vector<std::string> installed_fx();
 int num_inputs();

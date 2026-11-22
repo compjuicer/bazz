@@ -12,6 +12,9 @@ const char* kRole = "P_EXT:bazz_role";
 const char* kPos = "P_EXT:bazz_pos";
 const char* kOuts = "P_EXT:bazz_outs";
 const char* kPanel = "P_EXT:bazz_panel";
+const char* kSolo = "P_EXT:bazz_solo";
+const char* kGraph = "P_EXT:bazz_graph";        // track nodes: the GUID of the graph's root
+const char* kMainSend = "P_EXT:bazz_mainsend";  // track nodes: master/parent send to restore when unwired
 
 std::string get_str(MediaTrack* tr, const char* key) {
   char buf[4096] = "";
@@ -155,6 +158,9 @@ Scene scan(ReaProject* proj) {
   if (!root) return s;
   s.tracks.push_back(root);
   for (MediaTrack* tr : children(proj, root)) s.tracks.push_back(tr);
+  std::string id = guid(root);
+  for (int i = 0; i < CountTracks(proj); ++i)
+    if (get_str(GetTrack(proj, i), kRole) == "track" && get_str(GetTrack(proj, i), kGraph) == id) s.tracks.push_back(GetTrack(proj, i));
   for (size_t i = 0; i < s.tracks.size(); ++i) {
     MediaTrack* tr = s.tracks[i];
     Machine m;
@@ -162,13 +168,18 @@ Scene scan(ReaProject* proj) {
     char name[256] = "";
     GetTrackName(tr, name, sizeof name);
     m.name = i == 0 ? "Master" : name;
-    m.kind = i == 0                               ? Kind::Master
-             : get_str(tr, kRole) == "input"      ? Kind::Input
-             : TrackFX_GetInstrument(tr) >= 0     ? Kind::Generator
-                                                  : Kind::Effect;
+    std::string role = get_str(tr, kRole);
+    m.kind = i == 0                           ? Kind::Master
+             : role == "input"                ? Kind::Input
+             : role == "track"                ? Kind::Track
+             : TrackFX_GetInstrument(tr) >= 0 ? Kind::Generator
+                                              : Kind::Effect;
     if (!parse_pos(get_str(tr, kPos), &m.x, &m.y)) m.x = m.y = 0;
     m.mute = GetMediaTrackInfo_Value(tr, "B_MUTE") != 0;
     m.panel = get_str(tr, kPanel) == "1";
+    m.solo = get_str(tr, kSolo) == "1";
+    m.soloed = GetMediaTrackInfo_Value(tr, "I_SOLO") != 0;
+    m.armed = GetMediaTrackInfo_Value(tr, "I_RECARM") != 0;
     if (m.kind == Kind::Effect) m.ins = ports(tr, false);
     if (m.kind == Kind::Effect || m.kind == Kind::Generator) m.outs = ports(tr, true);
     add_main_ports(m);
@@ -191,6 +202,7 @@ Scene scan(ReaProject* proj) {
       int dst = int(GetTrackSendInfo_Value(tr, 1, k, "I_DSTCHAN"));
       Io io{dst & 1023, !(dst & 1024)};
       int j = out_machine(s, io);
+      if (j < 0 && s.g.machines[i].kind == Kind::Track) continue;  // an ordinary track's own outputs stay its own
       if (j < 0) {  // hardware output added outside bazz: show it
         add_out_machine(s, {io, 0.9, 0.9});
         j = int(s.g.machines.size()) - 1;
@@ -233,6 +245,8 @@ void new_graph(Scene& s) {
 }
 
 void delete_graph(Scene& s) {
+  for (int i = s.n_tracks - 1; i > 0; --i)
+    if (s.g.machines[i].kind == Kind::Track) delete_machine(s, i);
   for (int i = s.n_tracks - 1; i >= 0; --i) DeleteTrack(s.tracks[i]);
   auto rest = roots(s.proj);
   select_graph(s.proj, rest.empty() ? "" : guid(rest[0]));
@@ -263,12 +277,23 @@ void splice(Scene& s, int wire, int m) {
   set_wire_vol(s, find_wire(s.g, a, m, w.src, 0), w.vol);
 }
 
-void insert_machine(Scene& s, int wire, const std::string& fx, double x, double y) {
+namespace {
+template <class Add>
+void insert(Scene& s, int wire, Add add) {
   Wire w = s.g.wires[wire];
   std::string from = s.g.machines[w.from].id, to = s.g.machines[w.to].id;
-  int m = add_machine(s, fx, x, y);
+  int m = add();
   if (m < 0) return;
   splice(s, find_wire(s.g, find_machine(s, from), find_machine(s, to), w.src, w.dst), m);
+}
+}  // namespace
+
+void insert_machine(Scene& s, int wire, const std::string& fx, double x, double y) {
+  insert(s, wire, [&] { return add_machine(s, fx, x, y); });
+}
+
+void insert_track(Scene& s, int wire, const std::string& id, double x, double y) {
+  insert(s, wire, [&] { return add_track_node(s, id, x, y); });
 }
 
 void add_input(Scene& s, Io io, double x, double y) {
@@ -285,6 +310,16 @@ void add_output(Scene& s, Io io, double x, double y) {
   s = scan(s.proj);
 }
 
+void remove_child(Scene& s, int m) {
+  auto kids = children(s.proj, s.tracks[0]);
+  if (kids.back() == s.tracks[m]) {
+    if (kids.size() > 1) SetMediaTrackInfo_Value(kids[kids.size() - 2], "I_FOLDERDEPTH", -1);
+    else SetMediaTrackInfo_Value(s.tracks[0], "I_FOLDERDEPTH", 0);
+    SetMediaTrackInfo_Value(s.tracks[m], "I_FOLDERDEPTH", 0);
+  }
+  DeleteTrack(s.tracks[m]);
+}
+
 void delete_machine(Scene& s, int m) {
   if (m <= 0) return;
   if (!s.tracks[m]) {
@@ -298,13 +333,14 @@ void delete_machine(Scene& s, int m) {
   std::vector<std::pair<std::string, std::string>> ends;
   auto keep = bridges(s.g, m);
   for (auto& b : keep) ends.push_back({s.g.machines[b.from].id, s.g.machines[b.to].id});
-  auto kids = children(s.proj, s.tracks[0]);
-  if (kids.back() == s.tracks[m]) {
-    if (kids.size() > 1) SetMediaTrackInfo_Value(kids[kids.size() - 2], "I_FOLDERDEPTH", -1);
-    else SetMediaTrackInfo_Value(s.tracks[0], "I_FOLDERDEPTH", 0);
-    SetMediaTrackInfo_Value(s.tracks[m], "I_FOLDERDEPTH", 0);
+  if (s.g.machines[m].kind == Kind::Track) {  // unwire and untag; the track itself stays
+    MediaTrack* tr = s.tracks[m];
+    for (int w = int(s.g.wires.size()) - 1; w >= 0; --w)
+      if (s.g.wires[w].from == m || s.g.wires[w].to == m) disconnect(s, w);
+    for (const char* key : {kRole, kGraph, kPos, kPanel, kSolo}) set_str(tr, key, "");
+  } else {
+    remove_child(s, m);
   }
-  DeleteTrack(s.tracks[m]);
   s = scan(s.proj);
   for (size_t i = 0; i < keep.size(); ++i) {
     int a = find_machine(s, ends[i].first), b = find_machine(s, ends[i].second);
@@ -313,10 +349,15 @@ void delete_machine(Scene& s, int m) {
   }
 }
 
+
 void connect(Scene& s, int from, int to, int src, int dst) {
   if (!can_connect(s.g, from, to, src, dst)) return;
   MediaTrack* tr = s.tracks[from];
   need_channels(tr, src);
+  if (s.g.machines[from].kind == Kind::Track && GetMediaTrackInfo_Value(tr, "B_MAINSEND") != 0) {
+    set_str(tr, kMainSend, "1");  // its signal now goes through the graph, not straight to the master too
+    SetMediaTrackInfo_Value(tr, "B_MAINSEND", 0);
+  }
   if (s.tracks[to]) {
     need_channels(s.tracks[to], dst);
     int k = CreateTrackSend(tr, s.tracks[to]);
@@ -332,8 +373,15 @@ void connect(Scene& s, int from, int to, int src, int dst) {
 }
 
 void disconnect(Scene& s, int w) {
-  RemoveTrackSend(s.tracks[s.g.wires[w].from], s.refs[w].cat, s.refs[w].idx);
+  int from = s.g.wires[w].from;
+  MediaTrack* tr = s.tracks[from];
+  RemoveTrackSend(tr, s.refs[w].cat, s.refs[w].idx);
   s = scan(s.proj);
+  if (s.g.machines[from].kind != Kind::Track || get_str(tr, kMainSend) != "1") return;
+  for (auto& o : s.g.wires)
+    if (o.from == from) return;
+  SetMediaTrackInfo_Value(tr, "B_MAINSEND", 1);
+  set_str(tr, kMainSend, "");
 }
 
 void set_wire_vol(Scene& s, int w, double vol) {
@@ -362,9 +410,45 @@ void set_panel(Scene& s, int m, bool open) {
   s.g.machines[m].panel = open;
 }
 
-void arm_only(Scene& s, int m) {
-  for (int i = 1; i < s.n_tracks; ++i)
-    if (s.g.machines[i].kind == Kind::Generator) SetMediaTrackInfo_Value(s.tracks[i], "I_RECARM", i == m);
+void set_arm(Scene& s, int m, bool on) {
+  SetMediaTrackInfo_Value(s.tracks[m], "I_RECARM", on);
+  s.g.machines[m].armed = on;
+}
+
+void set_solo(Scene& s, int m, bool on) {
+  set_str(s.tracks[m], kSolo, on ? "1" : "");
+  s.g.machines[m].solo = on;
+  auto set = solo_set(s.g);
+  for (int i = 0; i < s.n_tracks; ++i) {
+    SetMediaTrackInfo_Value(s.tracks[i], "I_SOLO", set[i] ? 2 : 0);  // 2: solo in place, keeps the routing
+    s.g.machines[i].soloed = set[i];
+  }
+}
+
+std::vector<TrackInfo> free_tracks(ReaProject* proj) {
+  std::vector<TrackInfo> v;
+  for (int i = 0; i < CountTracks(proj); ++i) {
+    MediaTrack* tr = GetTrack(proj, i);
+    if (!get_str(tr, kRole).empty()) continue;
+    MediaTrack* p = GetParentTrack(tr);
+    if (p && get_str(p, kRole) == "root") continue;
+    char name[256] = "";
+    GetTrackName(tr, name, sizeof name);
+    v.push_back({guid(tr), name, i + 1});
+  }
+  return v;
+}
+
+int add_track_node(Scene& s, const std::string& id, double x, double y) {
+  for (int i = 0; i < CountTracks(s.proj); ++i) {
+    MediaTrack* tr = GetTrack(s.proj, i);
+    if (guid(tr) != id) continue;
+    set_str(tr, kRole, "track");
+    set_str(tr, kGraph, guid(s.tracks[0]));
+    set_str(tr, kPos, pos_str(x, y));
+  }
+  s = scan(s.proj);
+  return find_machine(s, id);
 }
 
 void show_fx(Scene& s, int m) {

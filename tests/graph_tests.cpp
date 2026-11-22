@@ -247,3 +247,45 @@ TEST_CASE("dropping a loose effect onto a wire") {
   CHECK(wire_near(g, v, v.sx(0) + 15, y, 10, 3) == -1);
   CHECK(wire_near(g, v, v.sx(0), y, 10, 2) == -1);             // the machine's own wires don't count
 }
+
+TEST_CASE("track nodes take and give signal") {
+  Graph g = chain();
+  g.machines.push_back({"t", "Bus", Kind::Track});
+  CHECK(can_connect(g, 2, 3));
+  CHECK(can_connect(g, 3, 0));
+  CHECK(!can_connect(g, 0, 3));
+}
+
+TEST_CASE("solo takes the whole path through the soloed machine") {
+  Graph g = chain();  // gen(1) -> fx(2) -> master(0)
+  g.machines.push_back({"g2", "Gen2", Kind::Generator});
+  g.machines.push_back({"f2", "Fx2", Kind::Effect});
+  g.wires.push_back({3, 4});
+  g.wires.push_back({4, 0});  // gen2(3) -> fx2(4) -> master
+  CHECK(solo_set(g) == std::vector<bool>(5, false));
+  g.machines[2].solo = true;  // soloing the effect keeps its source audible too
+  CHECK(solo_set(g) == std::vector<bool>{true, true, true, false, false});
+  g.machines[3].solo = true;
+  CHECK(solo_set(g) == std::vector<bool>(5, true));
+}
+
+TEST_CASE("M/S/R buttons by kind and hit test") {
+  CHECK(buttons(Kind::Generator) == "MSR");
+  CHECK(buttons(Kind::Effect) == "MS");
+  CHECK(buttons(Kind::Track) == "MS");
+  CHECK(buttons(Kind::Input) == "MS");
+  CHECK(buttons(Kind::Master) == "M");
+  CHECK(buttons(Kind::Output).empty());
+  View v{800, 600};
+  Machine gen{"g", "Gen", Kind::Generator};
+  double x = std::round(v.sx(0) - kBoxW / 2) + 2, y = std::round(v.sy(0) - kBoxH / 2) + 2;
+  CHECK(button_at(v, gen, x + 1, y + 1) == 'M');
+  CHECK(button_at(v, gen, x + kBtnStep + 1, y + 1) == 'S');
+  CHECK(button_at(v, gen, x + 2 * kBtnStep + 1, y + 1) == 0);
+  CHECK(button_at(v, gen, x + kBtnW + 0.5, y + 1) == 0);  // gap between buttons
+  CHECK(button_at(v, gen, x + 1, y + kBtnH + 1) == 0);
+  double r = y + kBoxH - 4 - kBtnH;  // R in the bottom-left corner
+  CHECK(button_at(v, gen, x + 1, r + 1) == 'R');
+  Machine fx{"f", "Fx", Kind::Effect};
+  CHECK(button_at(v, fx, x + 1, r + 1) == 0);
+}

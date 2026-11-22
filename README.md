@@ -4,7 +4,7 @@ A machine view for [REAPER](https://www.reaper.fm): build your signal flow the w
 dropping generators and effects on a canvas and wiring them into Master. Every box is a real REAPER track and every
 wire a real send, so undo, save, plugin state and the mixer all keep working.
 
-<img src="docs/screenshots/machines.png" width="900" alt="The machine view: synths and effects wired into Master and a hardware output">
+<img src="docs/screenshots/machines.png" width="900" alt="The machine view: synths, effects, an audio input and a REAPER track wired into Master and a hardware output, the vocal chain soloed">
 
 ## What you can do
 
@@ -17,12 +17,12 @@ wire a real send, so undo, save, plugin state and the mixer all keep working.
 | Insert an effect into a wire | Right-click the arrow (type to search), or drop an unconnected effect onto the wire |
 | Delete a wire | Alt/Option-click its arrow, or right-click > Disconnect |
 | Delete a machine | Alt/Option-click it, or right-click > Delete. Its wires are rejoined around it |
-| Mute | Click the LED in the top-left corner |
+| Mute, solo | Click **M** or **S** in the top-left corner. Solo takes the whole chain through the machine, up to Master |
+| Arm a generator for live MIDI | Click **R** in the bottom-left corner |
+| Bring in any REAPER track | Right-click empty canvas > Add Track (or search its name), then wire it like an effect |
 | Open the plugin | Double-click the machine |
 | Another graph in the same project | Click **+** in the tab strip; right-click a tab to delete its graph |
 | Dock into REAPER's docker | Right-click the canvas > Dock window, or the action **bazz: Dock/undock machine view** |
-
-Selecting a generator arms its track for live MIDI from any input, so you can play it right away.
 
 ### Extra inputs and outputs
 
@@ -34,8 +34,8 @@ and the row that will receive the cable are highlighted.
 
 ### Plugin search
 
-Right-click the canvas or a wire and start typing. Every word must appear in the plugin name, maker or type. Up/Down
-to choose, Enter to add.
+Right-click the canvas or a wire and start typing. Every word must appear in the plugin name, maker or type; REAPER
+tracks are listed too. Up/Down to choose, Enter to add.
 
 <img src="docs/screenshots/search.png" width="330" alt="Searching for reverbs">
 
@@ -45,6 +45,8 @@ to choose, Enter to add.
   the one folder. Every graph in a project is its own folder (`bazz`, `bazz 2`, ...).
 - Wires are sends; a wire into Master is a send to the folder track. Extra plugin ports use the send's channel pairs.
 - Hardware output nodes are hardware sends; audio input nodes are armed, monitored tracks that record nothing.
+- A track node stays where it is in the project; wiring it out turns off its send to the REAPER master, and
+  removing it from the graph turns that back on.
 - Positions and panel state are stored on the tracks, so they are saved with the project.
 
 ## Install

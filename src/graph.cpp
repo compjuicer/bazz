@@ -34,10 +34,29 @@ int find_wire(const Graph& g, int from, int to, int src, int dst) {
   return -1;
 }
 
+bool takes_input(Kind k) { return k == Kind::Effect || k == Kind::Master || k == Kind::Output || k == Kind::Track; }
+bool gives_output(Kind k) { return k == Kind::Effect || k == Kind::Generator || k == Kind::Input || k == Kind::Track; }
+
 bool can_connect(const Graph& g, int from, int to, int src, int dst) {
-  Kind a = g.machines[from].kind, b = g.machines[to].kind;
-  return from != to && a != Kind::Master && a != Kind::Output && b != Kind::Generator && b != Kind::Input &&
+  return from != to && gives_output(g.machines[from].kind) && takes_input(g.machines[to].kind) &&
          find_wire(g, from, to, src, dst) < 0 && !reaches(g, to, from);
+}
+
+std::vector<bool> solo_set(const Graph& g) {
+  int n = int(g.machines.size());
+  std::vector<bool> on(n);
+  for (int s = 0; s < n; ++s)
+    if (g.machines[s].solo)
+      for (int i = 0; i < n; ++i)
+        if (reaches(g, s, i) || reaches(g, i, s)) on[i] = true;
+  return on;
+}
+
+std::string buttons(Kind k) {
+  if (k == Kind::Generator) return "MSR";
+  if (k == Kind::Master) return "M";
+  if (k == Kind::Output) return "";
+  return "MS";
 }
 
 bool Shown::has(int m) const { return std::find(open.begin(), open.end(), m) != open.end(); }
@@ -50,8 +69,8 @@ bool has_ports(const Machine& m) {
 
 void add_main_ports(Machine& m) {
   if (!has_ports(m)) return;
-  if (m.kind == Kind::Effect || m.kind == Kind::Master || m.kind == Kind::Output) m.ins.insert(m.ins.begin(), {"Main", 0});
-  if (m.kind == Kind::Effect || m.kind == Kind::Generator || m.kind == Kind::Input) m.outs.insert(m.outs.begin(), {"Main", 0});
+  if (takes_input(m.kind)) m.ins.insert(m.ins.begin(), {"Main", 0});
+  if (gives_output(m.kind)) m.outs.insert(m.outs.begin(), {"Main", 0});
 }
 double panel_h(const Machine& m, bool out) { return (out ? m.outs : m.ins).size() * kRowH + 2; }
 
@@ -81,6 +100,19 @@ PortHit port_at(const Graph& g, const View& v, double px, double py, const Shown
     }
   }
   return {};
+}
+
+Pt button_pos(const View& v, const Machine& m, char c) {
+  if (c == 'R') return {bx(v, m) + 2, by(v, m) + kBoxH - 2 - kBtnH};
+  return {bx(v, m) + 2 + (c == 'S') * kBtnStep, by(v, m) + 2};
+}
+
+char button_at(const View& v, const Machine& m, double px, double py) {
+  for (char c : buttons(m.kind)) {
+    Pt p = button_pos(v, m, c);
+    if (px >= p.x && px < p.x + kBtnW && py >= p.y && py < p.y + kBtnH) return c;
+  }
+  return 0;
 }
 
 Pt toggle_pos(const View& v, const Machine& m) { return {bx(v, m) + kBoxW - kToggle - 2, by(v, m) + 2}; }
@@ -185,7 +217,7 @@ int wire_near(const Graph& g, const View& v, double px, double py, double r, int
 }
 
 bool is_loose(const Graph& g, int m) {
-  if (g.machines[m].kind != Kind::Effect) return false;
+  if (g.machines[m].kind != Kind::Effect && g.machines[m].kind != Kind::Track) return false;
   for (auto& w : g.wires)
     if (w.from == m || w.to == m) return false;
   return true;

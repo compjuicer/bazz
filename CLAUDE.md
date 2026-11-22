@@ -7,7 +7,8 @@ A REAPER extension (C++17, ReaImGui) that recreates the machine view of a classi
 - A folder track tagged `P_EXT:bazz_role=root` is the Master machine. A project can hold several graphs (one root folder each, shown as tabs); the selected root's GUID is in ProjExtState `bazz/graph`. Each machine is a hidden child track (`role=machine|input`) with its position in `P_EXT:bazz_pos` ("x y", normalized -1..1 across the view, like the original) and its port panel state in `P_EXT:bazz_panel`.
 - Wires are post-fader sends; a wire to Master is a send to the root track. `I_SRCCHAN`/`I_DSTCHAN` pick the stereo pair for extra plugin ports (sidechains, multi-outs); the track gets enough channels when wired.
 - Hardware output nodes are listed on the root (`P_EXT:bazz_outs`); wires into them are hardware output sends. Audio input nodes are armed, monitored child tracks that record nothing.
-- Generators are tracks whose first FX is an instrument; selecting one arms it for live MIDI.
+- Generators are tracks whose first FX is an instrument; R arms one for live MIDI. S (`P_EXT:bazz_solo`) solos the whole chain: every machine upstream and downstream of a soloed one gets `I_SOLO=2` (solo in place).
+- Track nodes (`role=track`, `P_EXT:bazz_graph` = root GUID) are ordinary tracks outside the folder brought into a graph. Wiring one out turns its main send off (remembered in `P_EXT:bazz_mainsend`, restored when its last output wire goes); removing it untags it instead of deleting the track.
 
 ## Layout
 - `src/graph.*`: pure model and geometry (no REAPER, no ImGui), covered by `tests/`.

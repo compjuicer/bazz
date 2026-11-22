@@ -5,7 +5,8 @@
 
 namespace bazz {
 
-enum class Kind { Master, Generator, Effect, Input, Output };  // Input: audio input track, Output: hardware output
+// Input: audio input track. Output: hardware output. Track: an ordinary REAPER track brought into the graph.
+enum class Kind { Master, Generator, Effect, Input, Output, Track };
 
 struct Port {
   std::string name;  // from the plugin's pin names, e.g. "Auxiliary Input"
@@ -18,6 +19,9 @@ struct Machine {
   Kind kind = Kind::Effect;
   double x = 0, y = 0;  // normalized -1..1 across the view, like the original
   bool mute = false;
+  bool solo = false;     // S clicked on this machine
+  bool soloed = false;   // REAPER solo is on (this machine or a chain through it)
+  bool armed = false;
   std::vector<Port> ins, outs;  // port panel rows: main 1/2 first, then the plugin's extra pairs (empty if no extras)
   bool panel = false;           // port panels shown
 };
@@ -46,6 +50,15 @@ struct View {
 };
 
 bool reaches(const Graph&, int from, int to);
+bool takes_input(Kind);
+bool gives_output(Kind);
+// Machines to solo: for every machine with S on, itself, everything it feeds and everything feeding it.
+std::vector<bool> solo_set(const Graph&);
+
+// M/S/R buttons: M and S in the box's top-left corner, R in the bottom-left; which ones depends on the kind.
+constexpr double kBtnW = 12, kBtnH = 11, kBtnStep = 14;
+std::string buttons(Kind);                                         // e.g. "MSR"
+char button_at(const View&, const Machine&, double px, double py);  // 0 if none
 bool can_connect(const Graph&, int from, int to, int src = 0, int dst = 0);
 int find_wire(const Graph&, int from, int to, int src = 0, int dst = 0);
 // Wires that keep the signal flowing when machine m is removed: each wire into its main input joined to each wire
@@ -75,7 +88,8 @@ struct PortHit {
   int k = -1;
 };
 PortHit port_at(const Graph&, const View&, double px, double py, const Shown&);  // a row of an open panel
-Pt toggle_pos(const View&, const Machine&);  // top-left of the panel toggle in the box's top right corner
+Pt toggle_pos(const View&, const Machine&);
+Pt button_pos(const View&, const Machine&, char);  // top-left  // top-left of the panel toggle in the box's top right corner
 Pt wire_start(const Graph&, const View&, const Wire&, const Shown& = {});
 Pt wire_end(const Graph&, const View&, const Wire&, const Shown& = {});
 struct Seg {
@@ -91,7 +105,7 @@ Tri arrow(const Graph&, const View&, int wire, const Shown& = {});  // at the wi
 int wire_at(const Graph&, const View&, double px, double py, const Shown& = {});  // arrow hit, -1 if none
 // Wire whose line passes within r of (px, py), nearest first, ignoring wires of machine skip; -1 if none.
 int wire_near(const Graph&, const View&, double px, double py, double r, int skip, const Shown& = {});
-bool is_loose(const Graph&, int m);  // an effect with no wires: can be dropped onto a wire
+bool is_loose(const Graph&, int m);  // an effect or track node with no wires: can be dropped onto a wire
 
 // Installed-FX names as REAPER lists them, e.g. "VSTi: Serum (Xfer Records)".
 std::string fx_short_name(const std::string&);  // "Serum"

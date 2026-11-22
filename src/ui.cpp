@@ -28,14 +28,29 @@ ImGui_Context* g_ctx = nullptr;
 std::string g_error;
 
 constexpr int kBg = 0xDAD6C9FF;
-struct Look {
-  unsigned box, led;
-};
-Look look(Kind k) {
-  if (k == Kind::Generator) return {0xA9AEC7FF, 0x28288CFF};
-  if (k == Kind::Input) return {0xD2B9A0FF, 0x8C2020FF};  // warm beige, dark red record LED (bright red = muted)
-  if (k == Kind::Effect) return {0xC7ADA9FF, 0x641E1EFF};
-  return {0xC6BEAAFF, 0x595922FF};
+std::string fit(std::string s, double w) {  // bold text cut to width w, with "..." if cut
+  if (gfx::text_w(s, true) <= w) return s;
+  while (!s.empty() && gfx::text_w(s + "...", true) > w) s.pop_back();
+  return s + "...";
+}
+
+// 5x7 pixel letters for the M/S/R buttons, emboldened by doubling each pixel to the right.
+void btn_glyph(double x, double y, char c, unsigned col) {
+  static const char* M[] = {"10001", "11011", "10101", "10101", "10001", "10001", "10001"};
+  static const char* S[] = {"01111", "10000", "10000", "01110", "00001", "00001", "11110"};
+  static const char* R[] = {"11110", "10001", "10001", "11110", "10100", "10010", "10001"};
+  const char** g = c == 'M' ? M : c == 'S' ? S : R;
+  for (int r = 0; r < 7; ++r)
+    for (int k = 0; k < 5; ++k)
+      if (g[r][k] == '1') gfx::fill(x + k, y + r, 2, 1, col);
+}
+
+unsigned box_color(Kind k) {
+  if (k == Kind::Generator) return 0xA9AEC7FF;
+  if (k == Kind::Input) return 0xD2B9A0FF;  // warm beige
+  if (k == Kind::Effect) return 0xC7ADA9FF;
+  if (k == Kind::Track) return 0xB4C2AEFF;  // sage: an ordinary REAPER track
+  return 0xC6BEAAFF;
 }
 
 unsigned mix(unsigned a, unsigned b, double t) {  // RGBA, t = share of b
@@ -107,7 +122,7 @@ struct Target {                   // where a connect drag would land
   int to = -1, dst = 0;
   bool ok = false;
 } g_target;
-constexpr unsigned kTab = 0xF0B030FF, kMuted = 0xE01818FF;
+constexpr unsigned kTab = 0xF0B030FF, kRed = 0xE01818FF, kSolo = 0xF0D000FF, kSoloDim = 0xC8BC7CFF;
 Shown g_sh;        // this frame's open panels
 int g_splice = -1;  // wire a dragged loose effect would be dropped into
 int g_menu_m = -1, g_menu_w = -1;
@@ -120,10 +135,6 @@ int g_search_sel = 0;
 double box_x(const View& v, const Machine& m) { return std::round(v.sx(m.x) - kBoxW / 2); }
 double box_y(const View& v, const Machine& m) { return std::round(v.sy(m.y) - kBoxH / 2); }
 
-bool on_led(const Scene& s, const View& v, int m, double x, double y) {
-  double bx = box_x(v, s.g.machines[m]), by = box_y(v, s.g.machines[m]);
-  return x >= bx + 2 && x < bx + 11 && y >= by + 2 && y < by + 11;
-}
 
 std::string port_label(const Port& p) { return p.name + " " + std::to_string(p.ch + 1) + "/" + std::to_string(p.ch + 2); }
 
@@ -195,12 +206,19 @@ void draw(const Scene& s, const View& v) {
   for (size_t i = 0; i < g.machines.size(); ++i) {
     auto& m = g.machines[i];
     double x = box_x(v, m), y = box_y(v, m);
-    Look l = look(m.kind);
-    gfx::fill(x, y, kBoxW, kBoxH, m.mute ? mix(l.box, gfx::kBlack, 0.35) : l.box);
+    unsigned col = box_color(m.kind);
+    gfx::fill(x, y, kBoxW, kBoxH, m.mute ? mix(col, gfx::kBlack, 0.35) : col);
     gfx::frame(x, y, kBoxW, kBoxH);
-    gfx::fill(x + 3, y + 3, 7, 7, m.mute ? kMuted : l.led);
-    gfx::frame(x + 2, y + 2, 9, 9);
-    gfx::text_centered(x + 1, y + 1, kBoxW - 2, kBoxH - 2, m.name, gfx::kBlack, true);
+    std::string b = buttons(m.kind);
+    for (char c : b) {  // M/S/R: red mute, yellow solo (dim: soloed through a chain), red arm
+      bool on = c == 'M' ? m.mute : c == 'S' ? m.solo || m.soloed : m.armed;
+      unsigned bg = !on ? kMenuBg : c == 'S' ? (m.solo ? kSolo : kSoloDim) : kRed;
+      Pt p = button_pos(v, m, c);
+      gfx::fill(p.x, p.y, kBtnW, kBtnH, bg);
+      gfx::frame(p.x, p.y, kBtnW, kBtnH);
+      btn_glyph(p.x + 3, p.y + 2, c, on && c != 'S' ? gfx::kWhite : gfx::kBlack);
+    }
+    gfx::text_centered(x + 1, y + 1, kBoxW - 2, kBoxH - 2, fit(m.name, kBoxW - 8), gfx::kBlack, true);
     if (g_drag == Drag::Connect && g_target.ok && g_target.to == int(i)) thick_frame(x, y, kBoxW, kBoxH);
     if (has_ports(m)) {  // panel toggle: + closed, - open
       Pt t = toggle_pos(v, m);
@@ -255,36 +273,48 @@ void io_menu(Scene& s, bool input) {
 
 // Search field on top of the canvas menu: typing replaces the submenus with matching plugins.
 // Returns true while there is a query.
-bool search(bool effects_only, const Pick& pick) {
+// Plugins and ordinary project tracks matching the query; the pick functions add the chosen one.
+bool search(Scene& s, bool effects_only, const Pick& pick, const Pick& pick_track) {
   if (G::IsWindowAppearing(g_ctx)) G::SetKeyboardFocusHere(g_ctx);
   G::PushStyleColor(g_ctx, G::Col_FrameBg, gfx::kWhite);
   G::PushStyleVar(g_ctx, G::StyleVar_FrameBorderSize, 1);
   G::SetNextItemWidth(g_ctx, 240);
-  G::InputTextWithHint(g_ctx, "##search", "Search plugins", g_search, sizeof g_search);
+  G::InputTextWithHint(g_ctx, "##search", "Search plugins and tracks", g_search, sizeof g_search);
   bool enter = G::IsKeyPressed(g_ctx, G::Key_Enter) || G::IsKeyPressed(g_ctx, G::Key_KeypadEnter);
   G::PopStyleVar(g_ctx);
   G::PopStyleColor(g_ctx);
   if (!g_search[0]) return false;
-  std::vector<const std::string*> found;
+  std::vector<std::pair<std::string, std::function<void()>>> found;
   for (auto& f : g_fx)
-    if (found.size() < 40 && fx_matches(f, g_search) && !(effects_only && fx_is_instrument(f))) found.push_back(&f);
+    if (found.size() < 40 && fx_matches(f, g_search) && !(effects_only && fx_is_instrument(f)))
+      found.push_back({fx_short_name(f) + " (" + fx_type(f) + ")", [&] { pick(f); }});
+  for (auto& t : free_tracks(s.proj)) {
+    std::string label = "Track " + std::to_string(t.number) + ": " + t.name;
+    if (found.size() < 40 && fx_matches(label, g_search)) found.push_back({label, [&pick_track, id = t.id] { pick_track(id); }});
+  }
   if (G::IsKeyPressed(g_ctx, G::Key_DownArrow)) ++g_search_sel;
   if (G::IsKeyPressed(g_ctx, G::Key_UpArrow)) --g_search_sel;
   g_search_sel = std::clamp(g_search_sel, 0, std::max(0, int(found.size()) - 1));
   if (found.empty()) menu_item("No matches", nullptr, 0);
   for (int i = 0; i < int(found.size()); ++i) {
-    std::string label = fx_short_name(*found[i]) + " (" + fx_type(*found[i]) + ")";
     G::PushID(g_ctx, std::to_string(i).c_str());
-    bool chosen = menu_item(label.c_str(), nullptr, i == g_search_sel ? 1 : 0) || (enter && i == g_search_sel);
+    bool chosen = menu_item(found[i].first.c_str(), nullptr, i == g_search_sel ? 1 : 0) || (enter && i == g_search_sel);
     if (G::IsItemHovered(g_ctx)) g_search_sel = i;
     G::PopID(g_ctx);
     if (chosen) {
-      pick(*found[i]);
+      found[i].second();
       G::CloseCurrentPopup(g_ctx);
       break;
     }
   }
   return true;
+}
+
+void track_menu(Scene& s, const Pick& pick_track) {
+  auto list = free_tracks(s.proj);
+  if (list.empty()) menu_item("No other tracks", nullptr, 0);
+  for (auto& t : list)
+    if (menu_item((std::to_string(t.number) + ": " + t.name).c_str())) pick_track(t.id);
 }
 
 void context_items(Scene& s) {
@@ -295,9 +325,17 @@ void context_items(Scene& s) {
       UndoBlock u(s.proj, "bazz: insert machine");
       insert_machine(s, g_menu_w, fx, x, y);
     };
-    if (search(true, insert)) return;
+    Pick insert_tr = [&](const std::string& id) {
+      UndoBlock u(s.proj, "bazz: insert track");
+      insert_track(s, g_menu_w, id, x, y);
+    };
+    if (search(s, true, insert, insert_tr)) return;
     if (begin_menu("Insert Effect")) {
       fx_menu(false, insert);
+      G::EndMenu(g_ctx);
+    }
+    if (begin_menu("Insert Track")) {
+      track_menu(s, insert_tr);
       G::EndMenu(g_ctx);
     }
     if (menu_item("Disconnect")) {
@@ -311,7 +349,7 @@ void context_items(Scene& s) {
       UndoBlock u(s.proj, "bazz: mute");
       set_mute(s, g_menu_m, mute);
     }
-    if (g_menu_m > 0 && menu_item("Delete")) {
+    if (g_menu_m > 0 && menu_item(s.g.machines[g_menu_m].kind == Kind::Track ? "Remove from graph" : "Delete")) {
       UndoBlock u(s.proj, "bazz: delete machine");
       delete_machine(s, g_menu_m);
     }
@@ -320,7 +358,11 @@ void context_items(Scene& s) {
       UndoBlock u(s.proj, "bazz: new machine");
       add_machine(s, fx, x, y);
     };
-    if (search(false, add)) return;
+    Pick add_tr = [&](const std::string& id) {
+      UndoBlock u(s.proj, "bazz: add track");
+      add_track_node(s, id, x, y);
+    };
+    if (search(s, false, add, add_tr)) return;
     if (begin_menu("New Generator")) {
       fx_menu(true, add);
       G::EndMenu(g_ctx);
@@ -335,6 +377,10 @@ void context_items(Scene& s) {
     }
     if (begin_menu("New Output")) {
       io_menu(s, false);
+      G::EndMenu(g_ctx);
+    }
+    if (begin_menu("Add Track")) {
+      track_menu(s, add_tr);
       G::EndMenu(g_ctx);
     }
     G::Separator(g_ctx);
@@ -440,16 +486,18 @@ void canvas(Scene& s) {
       disconnect(s, wi);
     } else if (wi >= 0) {
       g_drag = Drag::Volume, g_drag_w = wi, g_start_vol = g.wires[wi].vol, g_start_y = g_my;
-    } else if (m >= 0 && s.tracks[m] && on_led(s, v, m, g_mx, g_my)) {
-      UndoBlock u(s.proj, "bazz: mute");
-      set_mute(s, m, !g.machines[m].mute);
+    } else if (char b = m >= 0 ? button_at(v, g.machines[m], g_mx, g_my) : 0) {
+      auto& mm = g.machines[m];
+      UndoBlock u(s.proj, b == 'M' ? "bazz: mute" : b == 'S' ? "bazz: solo" : "bazz: arm");
+      if (b == 'M') set_mute(s, m, !mm.mute);
+      else if (b == 'S') set_solo(s, m, !mm.solo);
+      else set_arm(s, m, !mm.armed);
     } else if (m >= 0) {
       g_drag_m = m;
       if (shift) g_drag = Drag::Connect, g_drag_src = 0;
       else {
         g_drag = Drag::Move, g_off_x = v.sx(g.machines[m].x) - g_mx, g_off_y = v.sy(g.machines[m].y) - g_my;
         g_start_mx = g.machines[m].x, g_start_my = g.machines[m].y;
-        arm_only(s, m);
       }
     }
   }
